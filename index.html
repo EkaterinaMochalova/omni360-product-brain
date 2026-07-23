@@ -26,7 +26,8 @@
       </div>
       <div class="bar">
         <input id="q" placeholder="Поиск по исходному и продуктовому тексту">
-        <select id="quality"><option value="">Все уровни качества</option></select>
+        <select id="statusFilter"><option value="">Все статусы</option></select>
+        <select id="priorityFilter"><option value="">Все приоритеты</option></select>
         <button id="importSeed">Импортировать исходные реквесты</button>
         <button id="export">Экспорт JSON</button>
         <button id="reset" class="primary">Сбросить фильтры</button>
@@ -42,6 +43,13 @@
           <button id="addCategory" type="button">Добавить категорию</button>
         </div>
         <div id="nav"></div>
+        <hr>
+        <b>Статусы</b>
+        <div class="category-tools">
+          <input id="newStatus" placeholder="Новый статус">
+          <button id="addStatus" type="button">Добавить статус</button>
+        </div>
+        <div id="statusLegend"></div>
       </aside>
       <section class="card list"><div class="head" id="head">Реквесты</div><div id="list"></div></section>
       <aside class="card details" id="details"><div class="empty">Выберите реквест</div></aside>
