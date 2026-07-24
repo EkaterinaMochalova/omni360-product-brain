@@ -4,35 +4,40 @@ import { SEED_REQUESTS } from './seed-data.js';
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':'&quot;',"'":"&#039;"}[c]));
 const PRIORITIES = ['Не задан','Низкий','Средний','Высокий','Критический'];
-let requests = [], categories = [], statuses = [], selected = '', categoryFilter = '', saveTimer = null;
+let requests = [], categories = [], statuses = [], tags = [], requestTags = [], selected = '', categoryFilter = '', saveTimer = null;
 
 function setStatus(text, error=false){ const el=$('#syncStatus'); el.textContent=text; el.style.color=error?'#b42318':'#70788b'; }
 function categoryName(id){return categories.find(c=>c.id===id)?.name || 'Без категории'}
 function statusById(id){return statuses.find(s=>String(s.id)===String(id))}
 function statusName(id){return statusById(id)?.name || 'Новый'}
 function priorityClass(p){return p==='Критический'?'critical':p==='Высокий'?'high':p==='Средний'?'medium':p==='Низкий'?'low':'neutral'}
+function tagIdsFor(requestId){return requestTags.filter(x=>String(x.request_id)===String(requestId)).map(x=>String(x.tag_id))}
+function tagsFor(requestId){const ids=new Set(tagIdsFor(requestId));return tags.filter(t=>ids.has(String(t.id)))}
 function filtered(){
-  const q=$('#q').value.toLowerCase(), st=$('#statusFilter').value, pr=$('#priorityFilter').value;
-  return requests.filter(x=>!x.deleted&&(!categoryFilter||String(x.category_id)===categoryFilter)&&(!st||String(x.status_id)===st)&&(!pr||x.priority===pr)&&(!q||Object.values(x).join(' ').toLowerCase().includes(q)));
+  const q=$('#q').value.trim().toLowerCase(), st=$('#statusFilter').value, pr=$('#priorityFilter').value, tag=$('#tagFilter').value;
+  return requests.filter(x=>{const ownTagIds=tagIdsFor(x.id),tagText=tagsFor(x.id).map(t=>t.name).join(' ');return !x.deleted&&(!categoryFilter||String(x.category_id)===categoryFilter)&&(!st||String(x.status_id)===st)&&(!pr||x.priority===pr)&&(!tag||ownTagIds.includes(tag))&&(!q||(Object.values(x).join(' ')+' '+tagText).toLowerCase().includes(q))});
 }
 
 async function loadData(){
   setStatus('Загрузка…');
-  const [{data:c,error:ce},{data:s,error:se},{data:r,error:re}] = await Promise.all([
+  const [{data:c,error:ce},{data:s,error:se},{data:r,error:re},{data:t,error:te},{data:rt,error:rte}] = await Promise.all([
     supabase.from('categories').select('*').order('name'),
     supabase.from('statuses').select('*').eq('is_active',true).order('sort_order').order('name'),
-    supabase.from('requests').select('*').eq('deleted',false).order('source_id')
+    supabase.from('requests').select('*').eq('deleted',false).order('source_id'),
+    supabase.from('tags').select('*').order('name'),
+    supabase.from('request_tags').select('request_id,tag_id')
   ]);
-  if(ce||se||re) throw ce||se||re;
-  categories=c||[]; statuses=s||[]; requests=r||[];
+  if(ce||se||re||te||rte) throw ce||se||re||te||rte;
+  categories=c||[]; statuses=s||[]; requests=r||[]; tags=t||[]; requestTags=rt||[];
   renderAll(); setStatus('Данные загружены');
 }
 
 function renderAll(){renderFilters();renderNav();renderStatusLegend();renderList();if(selected)show(selected)}
 function renderFilters(){
-  const st=$('#statusFilter').value, pr=$('#priorityFilter').value;
+  const st=$('#statusFilter').value, pr=$('#priorityFilter').value, tag=$('#tagFilter').value;
   $('#statusFilter').innerHTML='<option value="">Все статусы</option>'+statuses.map(s=>`<option value="${s.id}" ${String(s.id)===st?'selected':''}>${esc(s.name)}</option>`).join('');
   $('#priorityFilter').innerHTML='<option value="">Все приоритеты</option>'+PRIORITIES.map(p=>`<option ${p===pr?'selected':''}>${p}</option>`).join('');
+  $('#tagFilter').innerHTML='<option value="">Все теги</option>'+tags.map(t=>`<option value="${t.id}" ${String(t.id)===tag?'selected':''}>${esc(t.name)}</option>`).join('');
 }
 function renderStatusLegend(){
   $('#statusLegend').innerHTML=statuses.map(s=>`<div class="status-row"><span class="status-dot" style="background:${esc(s.color)}"></span>${esc(s.name)}</div>`).join('');
@@ -45,7 +50,7 @@ function renderNav(){
 }
 function renderList(){
   const arr=filtered(); $('#head').textContent=`${categoryFilter?categoryName(Number(categoryFilter)):'Все реквесты'} · ${arr.length}`;
-  $('#list').innerHTML=arr.map(x=>{const st=statusById(x.status_id);return `<div class="item ${selected===String(x.id)?'active':''}" data-id="${x.id}"><div class="id">${esc(x.source_id||x.id)}</div><div><div class="ttl">${esc(x.normalized_title||x.title)}</div><div class="meta">${esc(categoryName(x.category_id))}</div></div><div class="badges"><span class="badge" style="background:${esc(st?.color||'#667085')}18;color:${esc(st?.color||'#667085')};border-color:${esc(st?.color||'#667085')}55">${esc(st?.name||'Новый')}</span><span class="badge priority ${priorityClass(x.priority)}">${esc(x.priority||'Не задан')}</span></div></div>`}).join('');
+  $('#list').innerHTML=arr.map(x=>{const st=statusById(x.status_id),ownTags=tagsFor(x.id);return `<div class="item ${selected===String(x.id)?'active':''}" data-id="${x.id}"><div class="id">${esc(x.source_id||x.id)}</div><div><div class="ttl">${esc(x.normalized_title||x.title)}</div><div class="meta">${esc(categoryName(x.category_id))}</div>${ownTags.length?`<div class="item-tags">${ownTags.map(t=>`<span class="badge tag">${esc(t.name)}</span>`).join('')}</div>`:''}</div><div class="badges"><span class="badge" style="background:${esc(st?.color||'#667085')}18;color:${esc(st?.color||'#667085')};border-color:${esc(st?.color||'#667085')}55">${esc(st?.name||'Новый')}</span><span class="badge priority ${priorityClass(x.priority)}">${esc(x.priority||'Не задан')}</span></div></div>`}).join('');
   document.querySelectorAll('.item').forEach(i=>i.onclick=()=>show(i.dataset.id));
 }
 function show(id){
@@ -63,11 +68,15 @@ function show(id){
   <label>Ссылка YouTrack<input name="youtrack_url" value="${esc(x.youtrack_url||'')}" placeholder="https://.../issue/OBDSP-123"></label>
   ${x.legacy_quality?`<div class="legacy">Старый уровень качества: ${esc(x.legacy_quality)}</div>`:''}
   <div class="actions"><button class="primary" type="submit">Сохранить сейчас</button>${x.youtrack_url?'<button type="button" id="openyt">Открыть YT</button>':''}<button class="danger" type="button" id="deleteRequest">Удалить реквест</button></div></form>
+  <div class="tag-editor"><b>Теги</b><div class="tag-options">${tags.length?tags.map(t=>`<label class="tag-option"><input type="checkbox" data-tag-id="${t.id}" ${tagIdsFor(x.id).includes(String(t.id))?'checked':''}>${esc(t.name)}</label>`).join(''):'Тегов пока нет'}</div><div class="tag-create"><input id="newTag" placeholder="Новый тег"><button id="addTag" type="button">Создать и привязать</button></div></div>
   <div class="section"><label>Исходная формулировка</label><div class="box">${esc(x.description)}</div></div>`;
   const form=$('#requestForm');
   form.oninput=()=>scheduleSave(x.id,form); form.onsubmit=e=>{e.preventDefault();saveForm(x.id,form)};
   $('#openyt')?.addEventListener('click',()=>window.open(x.youtrack_url,'_blank'));
   $('#deleteRequest').onclick=()=>deleteRequest(x.id);
+  document.querySelectorAll('[data-tag-id]').forEach(input=>input.onchange=()=>setRequestTag(x.id,input.dataset.tagId,input.checked));
+  $('#addTag').onclick=()=>createAndAttachTag(x.id);
+  $('#newTag').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();createAndAttachTag(x.id)}};
   renderList();
 }
 function formPayload(form){const f=Object.fromEntries(new FormData(form).entries());f.category_id=f.category_id?Number(f.category_id):null;f.status_id=f.status_id?Number(f.status_id):null;return f}
@@ -103,6 +112,34 @@ async function addStatus(){
   if(error){alert(error.code==='23505'?'Такой статус уже существует':error.message);return}
   statuses.push(data);statuses.sort((a,b)=>(a.sort_order-b.sort_order)||a.name.localeCompare(b.name,'ru'));input.value='';renderAll();setStatus('Статус добавлен');
 }
+async function setRequestTag(requestId,tagId,enabled){
+  setStatus('Сохранение тегов…');
+  const query=enabled
+    ?supabase.from('request_tags').upsert({request_id:requestId,tag_id:tagId},{onConflict:'request_id,tag_id'})
+    :supabase.from('request_tags').delete().eq('request_id',requestId).eq('tag_id',tagId);
+  const {error}=await query;
+  if(error){setStatus('Ошибка сохранения тегов: '+error.message,true);show(requestId);return false}
+  if(enabled){
+    if(!tagIdsFor(requestId).includes(String(tagId))) requestTags.push({request_id:requestId,tag_id:tagId});
+  }else requestTags=requestTags.filter(x=>!(String(x.request_id)===String(requestId)&&String(x.tag_id)===String(tagId)));
+  renderList();setStatus('Теги сохранены');return true
+}
+async function createAndAttachTag(requestId){
+  const input=$('#newTag'),name=input.value.trim();if(!name)return;
+  let tag=tags.find(t=>t.name.localeCompare(name,'ru',{sensitivity:'accent'})===0);
+  if(!tag){
+    const {data,error}=await supabase.from('tags').insert({name}).select().single();
+    if(error?.code==='23505'){
+      const {data:allTags,error:loadError}=await supabase.from('tags').select('*').order('name');
+      if(loadError){setStatus('Ошибка загрузки тегов: '+loadError.message,true);return}
+      tags=allTags||[];tag=tags.find(t=>t.name.localeCompare(name,'ru',{sensitivity:'accent'})===0);
+    }else if(error){setStatus('Ошибка создания тега: '+error.message,true);return}
+    else{tag=data;tags.push(tag);tags.sort((a,b)=>a.name.localeCompare(b.name,'ru'))}
+  }
+  if(!tag){setStatus('Не удалось найти созданный тег',true);return}
+  if(!tagIdsFor(requestId).includes(String(tag.id))&&!(await setRequestTag(requestId,tag.id,true)))return;
+  renderFilters();show(requestId);setStatus('Тег привязан');
+}
 function mapQualityToStatusName(q){
   if(['Готово','Можно создавать'].includes(q)) return 'Обработать';
   if(['Нужно уточнить','Недостаточно контекста','Требует разделения','Почти готово','Готово после уточнений','Уточнить','Не готово'].includes(q)) return 'Нужно уточнить';
@@ -121,14 +158,14 @@ async function importSeed(){
   const chunk=50;for(let i=0;i<rows.length;i+=chunk){const {error}=await supabase.from('requests').upsert(rows.slice(i,i+chunk),{onConflict:'source_id'});if(error){setStatus(error.message,true);return}}
   await loadData();setStatus('Исходные реквесты импортированы');
 }
-function exportJson(){const blob=new Blob([JSON.stringify(requests.filter(x=>!x.deleted),null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='omni360_product_brain.json';a.click();URL.revokeObjectURL(a.href)}
+function exportJson(){const rows=requests.filter(x=>!x.deleted).map(x=>({...x,tags:tagsFor(x.id).map(t=>t.name)}));const blob=new Blob([JSON.stringify(rows,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='omni360_product_brain.json';a.click();URL.revokeObjectURL(a.href)}
 
 $('#loginForm').onsubmit=async e=>{e.preventDefault();$('#authMessage').textContent='Вход…';const {error}=await supabase.auth.signInWithPassword({email:$('#email').value,password:$('#password').value});$('#authMessage').textContent=error?error.message:''};
 $('#logout').onclick=()=>supabase.auth.signOut();
 $('#addCategory').onclick=addCategory;$('#newCategory').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();addCategory()}};
 $('#addStatus').onclick=addStatus;$('#newStatus').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();addStatus()}};
-$('#importSeed').onclick=importSeed;$('#export').onclick=exportJson;$('#q').oninput=renderList;$('#statusFilter').onchange=renderList;$('#priorityFilter').onchange=renderList;
-$('#reset').onclick=()=>{$('#q').value='';$('#statusFilter').value='';$('#priorityFilter').value='';categoryFilter='';renderNav();renderList()};
+$('#importSeed').onclick=importSeed;$('#export').onclick=exportJson;$('#q').oninput=renderList;$('#statusFilter').onchange=renderList;$('#priorityFilter').onchange=renderList;$('#tagFilter').onchange=renderList;
+$('#reset').onclick=()=>{$('#q').value='';$('#statusFilter').value='';$('#priorityFilter').value='';$('#tagFilter').value='';categoryFilter='';renderNav();renderList()};
 
 async function applySession(session){
   const logged=!!session;$('#auth').hidden=logged;$('#app').hidden=!logged;
