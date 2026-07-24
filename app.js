@@ -59,6 +59,8 @@ function show(id){
   <label>Категория<select name="category_id"><option value="">Без категории</option>${categories.map(c=>`<option value="${c.id}" ${x.category_id===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></label>
   <div class="two-cols"><label>Статус<select name="status_id">${statuses.map(s=>`<option value="${s.id}" ${String(x.status_id)===String(s.id)?'selected':''}>${esc(s.name)}</option>`).join('')}</select></label>
   <label>Приоритет<select name="priority">${PRIORITIES.map(p=>`<option ${x.priority===p?'selected':''}>${p}</option>`).join('')}</select></label></div>
+  <label>Исходное название<input name="title" value="${esc(x.title)}"></label>
+  <label>Исходная формулировка<textarea name="description">${esc(x.description)}</textarea></label>
   <label>Нормализованное название<input name="normalized_title" value="${esc(x.normalized_title)}"></label>
   <label>Продуктовое требование<textarea name="requirement">${esc(x.requirement)}</textarea></label>
   <label>Проблема<textarea name="problem">${esc(x.problem)}</textarea></label>
@@ -68,8 +70,7 @@ function show(id){
   <label>Ссылка YouTrack<input name="youtrack_url" value="${esc(x.youtrack_url||'')}" placeholder="https://.../issue/OBDSP-123"></label>
   ${x.legacy_quality?`<div class="legacy">Старый уровень качества: ${esc(x.legacy_quality)}</div>`:''}
   <div class="actions"><button class="primary" type="submit">Сохранить сейчас</button>${x.youtrack_url?'<button type="button" id="openyt">Открыть YT</button>':''}<button class="danger" type="button" id="deleteRequest">Удалить реквест</button></div></form>
-  <div class="tag-editor"><b>Теги</b><div class="tag-options">${tags.length?tags.map(t=>`<label class="tag-option"><input type="checkbox" data-tag-id="${t.id}" ${tagIdsFor(x.id).includes(String(t.id))?'checked':''}>${esc(t.name)}</label>`).join(''):'Тегов пока нет'}</div><div class="tag-create"><input id="newTag" placeholder="Новый тег"><button id="addTag" type="button">Создать и привязать</button></div></div>
-  <div class="section"><label>Исходная формулировка</label><div class="box">${esc(x.description)}</div></div>`;
+  <div class="tag-editor"><b>Теги</b><div class="tag-options">${tags.length?tags.map(t=>`<label class="tag-option"><input type="checkbox" data-tag-id="${t.id}" ${tagIdsFor(x.id).includes(String(t.id))?'checked':''}>${esc(t.name)}</label>`).join(''):'Тегов пока нет'}</div><div class="tag-create"><input id="newTag" placeholder="Новый тег"><button id="addTag" type="button">Создать и привязать</button></div></div>`;
   const form=$('#requestForm');
   form.oninput=()=>scheduleSave(x.id,form); form.onsubmit=e=>{e.preventDefault();saveForm(x.id,form)};
   $('#openyt')?.addEventListener('click',()=>window.open(x.youtrack_url,'_blank'));
@@ -98,6 +99,18 @@ async function deleteRequest(id){
   const {error}=await supabase.from('requests').update({deleted:true}).eq('id',id);
   if(error){setStatus('Ошибка удаления: '+error.message,true);return}
   x.deleted=true;selected='';$('#details').innerHTML='<div class="empty">Реквест удалён</div>';renderNav();renderList();setStatus('Реквест удалён');
+}
+async function createRequest(){
+  const title=prompt('Название нового реквеста:')?.trim();if(!title)return;
+  const sourceId='MANUAL-'+Date.now().toString(36).toUpperCase();
+  const newStatus=statuses.find(s=>s.name==='Новый')||statuses[0];
+  const payload={source_id:sourceId,external_key:sourceId,type:'Feature request',title,description:'',status:'Новый',priority:'Не задан',normalized_title:title,requirement:'',problem:'',business_value:'',acceptance:'',uncertainty:'',quality:'Не обработано',status_id:newStatus?.id||null,deleted:false};
+  setStatus('Создание реквеста…');
+  const {data,error}=await supabase.from('requests').insert(payload).select().single();
+  if(error){setStatus('Ошибка создания реквеста: '+error.message,true);return}
+  requests.unshift(data);
+  $('#q').value='';$('#statusFilter').value='';$('#priorityFilter').value='';$('#tagFilter').value='';categoryFilter='';
+  renderNav();renderFilters();show(data.id);setStatus('Реквест создан');
 }
 async function addCategory(){
   const input=$('#newCategory'),name=input.value.trim();if(!name)return;
@@ -164,6 +177,7 @@ $('#loginForm').onsubmit=async e=>{e.preventDefault();$('#authMessage').textCont
 $('#logout').onclick=()=>supabase.auth.signOut();
 $('#addCategory').onclick=addCategory;$('#newCategory').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();addCategory()}};
 $('#addStatus').onclick=addStatus;$('#newStatus').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();addStatus()}};
+$('#newRequest').onclick=createRequest;
 $('#importSeed').onclick=importSeed;$('#export').onclick=exportJson;$('#q').oninput=renderList;$('#statusFilter').onchange=renderList;$('#priorityFilter').onchange=renderList;$('#tagFilter').onchange=renderList;
 $('#reset').onclick=()=>{$('#q').value='';$('#statusFilter').value='';$('#priorityFilter').value='';$('#tagFilter').value='';categoryFilter='';renderNav();renderList()};
 
